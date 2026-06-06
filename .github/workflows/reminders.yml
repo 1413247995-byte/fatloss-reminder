@@ -1,0 +1,37 @@
+name: 减脂提醒
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+    - cron: "50 10 * * *"
+    - cron: "30 12 * * *"
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 发送提醒
+        run: |
+          HOUR_UTC=$(date -u +%H)
+          MIN_UTC=$(date -u +%M)
+          HOUR_BJT=$(( (10#$HOUR_UTC + 8) % 24 ))
+
+          if [ "$HOUR_UTC" = "10" ] && [ "$MIN_UTC" = "50" ]; then
+            TITLE="运动时间"
+            BODY="🏃 18:50了！不下雨就去散个步吧"
+          elif [ "$HOUR_UTC" = "12" ] && [ "$MIN_UTC" = "30" ]; then
+            TITLE="打卡提醒"
+            BODY="📋 今天减脂打卡了吗？记得记录体重和习惯哦"
+          elif [ "$HOUR_UTC" -ge 1 ] && [ "$HOUR_UTC" -le 9 ] && [ "$MIN_UTC" = "00" ]; then
+            TITLE="喝水提醒"
+            BODY="💧 ${HOUR_BJT}:00 了，记得喝一杯水！"
+          else
+            echo "不在提醒时间范围内，跳过"
+            exit 0
+          fi
+
+          echo "发送: $TITLE"
+          curl -X POST https://wxpusher.zjiecode.com/api/send/message \
+            -H "Content-Type: application/json" \
+            -d "{\"appToken\":\"${{ secrets.WXPUSHER_TOKEN }}\",\"content\":\"$BODY\",\"summary\":\"$TITLE\",\"contentType\":1,\"uids\":[\"${{ secrets.WXPUSHER_UID }}\"]}"
