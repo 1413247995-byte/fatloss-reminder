@@ -2,9 +2,20 @@ name: 减脂提醒
 
 on:
   schedule:
-    - cron: "0 * * * *"     # 每小时整点运行
-    - cron: "50 10 * * *"   # 18:50 北京 (10:50 UTC)
-    - cron: "30 12 * * *"   # 20:30 北京 (12:30 UTC)
+    # 喝水提醒 - 北京时间 9:00-17:00 整点 → UTC 1:00-9:00
+    - cron: "0 1 * * *"    # 9:00
+    - cron: "0 2 * * *"    # 10:00
+    - cron: "0 3 * * *"    # 11:00
+    - cron: "0 4 * * *"    # 12:00
+    - cron: "0 5 * * *"    # 13:00
+    - cron: "0 6 * * *"    # 14:00
+    - cron: "0 7 * * *"    # 15:00
+    - cron: "0 8 * * *"    # 16:00
+    - cron: "0 9 * * *"    # 17:00
+    # 运动提醒 - UTC 10:50 → 北京 18:50
+    - cron: "50 10 * * *"
+    # 打卡提醒 - UTC 12:30 → 北京 20:30
+    - cron: "30 12 * * *"
   workflow_dispatch:
 
 jobs:
@@ -13,32 +24,46 @@ jobs:
     steps:
       - name: 发送提醒
         run: |
-          HOUR_UTC=$(date -u +%H)
-          MIN_UTC=$(date -u +%M)
-          HOUR_BJT=$(( (10#$HOUR_UTC + 8) % 24 ))
-          MIN_UTC_INT=$((10#$MIN_UTC))
+          HOUR_UTC=$(date -u +%H | sed 's/^0//')
+          MIN_UTC=$(date -u +%M | sed 's/^0//')
+          HOUR_BJT=$(( (HOUR_UTC + 8) % 24 ))
 
           TITLE=""
           BODY=""
 
-          # 18:50 运动提醒（允许前后5分钟延迟）
-          if [ "$HOUR_UTC" = "10" ] && [ "$MIN_UTC_INT" -ge 45 ] && [ "$MIN_UTC_INT" -le 55 ]; then
-            TITLE="运动时间"
-            BODY="🏃 18:50了！不下雨就去散个步吧"
-          # 20:30 打卡提醒（允许前后5分钟延迟）
-          elif [ "$HOUR_UTC" = "12" ] && [ "$MIN_UTC_INT" -ge 25 ] && [ "$MIN_UTC_INT" -le 35 ]; then
-            TITLE="打卡提醒"
-            BODY="📋 今天减脂打卡了吗？记得记录体重和习惯哦"
-          # 9:00-17:00 整点喝水（1:00-9:00 UTC，允许前后5分钟延迟）
-          elif [ "$HOUR_UTC" -ge 1 ] && [ "$HOUR_UTC" -le 9 ] && [ "$MIN_UTC_INT" -le 10 ]; then
-            TITLE="喝水提醒"
-            BODY="💧 ${HOUR_BJT}:00 了，记得喝一杯水！"
+          # 18:50 运动提醒 (UTC 10)
+          if [ "$HOUR_UTC" = "10" ]; then
+            TITLE="运动时间 🏃"
+            BODY="18:50了！不下雨就去散个步吧"
+          # 20:30 打卡提醒 (UTC 12)
+          elif [ "$HOUR_UTC" = "12" ]; then
+            TITLE="打卡提醒 📋"
+            BODY="今天减脂打卡了吗？记得记录体重和习惯哦"
+          # 9:00-17:00 整点喝水 (UTC 1-9)
+          elif [ "$HOUR_UTC" -ge 1 ] && [ "$HOUR_UTC" -le 9 ]; then
+            TITLE="喝水提醒 💧"
+            BODY="${HOUR_BJT}:00 了，记得喝一杯水！"
           else
             echo "不在提醒时间范围内，跳过 (UTC ${HOUR_UTC}:${MIN_UTC})"
             exit 0
           fi
 
           echo "发送: $TITLE"
-          curl -X POST https://wxpusher.zjiecode.com/api/send/message \
+          echo "内容: $BODY"
+
+          HTTP_CODE=$(curl -s -o /tmp/wxpusher_resp.json -w "%{http_code}" \
+            -X POST https://wxpusher.zjiecode.com/api/send/message \
             -H "Content-Type: application/json" \
-            -d "{\"appToken\":\"\${{ secrets.WXPUSHER_TOKEN }}\",\"content\":\"$BODY\",\"summary\":\"$TITLE\",\"contentType\":1,\"uids\":[\"\${{ secrets.WXPUSHER_UID }}\"]}"
+            -d "{\"appToken\":\"${{ secrets.WXPUSHER_TOKEN }}\",\"content\":\"$BODY\",\"summary\":\"$TITLE\",\"contentType\":1,\"uids\":[\"${{ secrets.WXPUSHER_UID }}\"]}")
+
+          echo "HTTP状态: $HTTP_CODE"
+          cat /tmp/wxpusher_resp.json
+          echo ""
+
+          # 检查 WxPusher 返回码
+          WX_CODE=$(grep -o '"code":[0-9]*' /tmp/wxpusher_resp.json | cut -d: -f2)
+          if [ "$WX_CODE" != "1000" ]; then
+            echo "⚠️ WxPusher 返回异常 code=$WX_CODE"
+            exit 1
+          fi
+          echo "✅ 发送成功"
